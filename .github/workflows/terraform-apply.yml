@@ -1,0 +1,62 @@
+
+name: Terraform Apply - Production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-production
+  cancel-in-progress: false
+
+jobs:
+  terraform-apply:
+    name: Approve and Apply Terraform
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_VAR_ami_id: ${{ vars.TF_VAR_ami_id }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::359013545320:role/GitHubActions-Project03-Role
+          aws-region: ap-south-1
+
+      - name: Initialize Terraform
+        run: terraform init -input=false
+
+      - name: Validate Terraform
+        run: terraform validate -no-color
+
+      - name: Generate Terraform plan
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Apply Terraform plan
+        run: terraform apply -input=false -no-color tfplan
+
+      - name: Display Terraform outputs
+        run: terraform output -no-color
+
+      - name: Verify deployed web application
+        shell: bash
+        run: |
+          APP_URL=$(terraform output -raw application_url)
+          echo "Checking deployed application..."
+          curl --fail --show-error --retry 5 --retry-delay 5 "$APP_URL"
